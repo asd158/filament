@@ -146,21 +146,41 @@ public class Scene {
     }
 
     /**
-     * Returns the number of {@link RenderableManager} components in the <code>Scene</code>.
+     * Returns the total number of Entities in the <code>Scene</code>, whether alive or not.
      *
-     * @return number of {@link RenderableManager} components in the <code>Scene</code>..
+     * @return the total number of Entities in the <code>Scene</code>.
+     */
+    public int getEntityCount() {
+        return nGetEntityCount(getNativeObject());
+    }
+
+    /**
+     * Returns the number of active (alive) {@link RenderableManager} components in the
+     * <code>Scene</code>.
+     *
+     * @return number of {@link RenderableManager} components in the <code>Scene</code>.
      */
     public int getRenderableCount() {
         return nGetRenderableCount(getNativeObject());
     }
 
     /**
-     * Returns the number of {@link LightManager} components in the <code>Scene</code>.
+     * Returns the number of active (alive) {@link LightManager} components in the
+     * <code>Scene</code>.
      *
-     * @return number of {@link LightManager} components in the <code>Scene</code>..
+     * @return number of {@link LightManager} components in the <code>Scene</code>.
      */
     public int getLightCount() {
         return nGetLightCount(getNativeObject());
+    }
+
+    /**
+     * Returns true if the given entity is in the Scene.
+     *
+     * @return Whether the given entity is in the Scene.
+     */
+    public boolean hasEntity(@Entity int entity) {
+        return nHasEntity(getNativeObject(), entity);
     }
 
     public long getNativeObject() {
@@ -180,6 +200,8 @@ public class Scene {
     private static native void nAddEntities(long nativeScene, int[] entities);
     private static native void nRemove(long nativeScene, int entity);
     private static native void nRemoveEntities(long nativeScene, int[] entities);
+    private static native int nGetEntityCount(long nativeScene);
     private static native int nGetRenderableCount(long nativeScene);
     private static native int nGetLightCount(long nativeScene);
+    private static native boolean nHasEntity(long nativeScene, int entity);
 }

@@ -72,6 +72,13 @@ Java_com_google_android_filament_Scene_nRemoveEntities(JNIEnv *env, jclass type,
 }
 
 extern "C" JNIEXPORT jint JNICALL
+Java_com_google_android_filament_Scene_nGetEntityCount(JNIEnv *env, jclass type,
+        jlong nativeScene) {
+    Scene* scene = (Scene*) nativeScene;
+    return (jint) scene->getEntityCount();
+}
+
+extern "C" JNIEXPORT jint JNICALL
 Java_com_google_android_filament_Scene_nGetRenderableCount(JNIEnv *env, jclass type,
         jlong nativeScene) {
     Scene* scene = (Scene*) nativeScene;
@@ -82,4 +89,12 @@ extern "C" JNIEXPORT jint JNICALL
 Java_com_google_android_filament_Scene_nGetLightCount(JNIEnv *env, jclass type, jlong nativeScene) {
     Scene* scene = (Scene*) nativeScene;
     return (jint) scene->getLightCount();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_google_android_filament_Scene_nHasEntity(JNIEnv *env, jclass type, jlong nativeScene,
+        jint entityId) {
+    Scene* scene = (Scene*) nativeScene;
+    Entity entity = Entity::import(entityId);
+    return (jboolean) scene->hasEntity(entity);
 }

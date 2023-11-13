@@ -26,6 +26,7 @@
 #include <stdint.h>
 
 #include <limits>
+#include <type_traits>
 
 namespace filament::backend {
 
@@ -38,7 +39,6 @@ struct HwRenderTarget;
 struct HwSamplerGroup;
 struct HwStream;
 struct HwSwapChain;
-struct HwSync;
 struct HwTexture;
 struct HwTimerQuery;
 struct HwVertexBuffer;
@@ -125,7 +125,6 @@ using RenderTargetHandle    = Handle<HwRenderTarget>;
 using SamplerGroupHandle    = Handle<HwSamplerGroup>;
 using StreamHandle          = Handle<HwStream>;
 using SwapChainHandle       = Handle<HwSwapChain>;
-using SyncHandle            = Handle<HwSync>;
 using TextureHandle         = Handle<HwTexture>;
 using TimerQueryHandle      = Handle<HwTimerQuery>;
 using VertexBufferHandle    = Handle<HwVertexBuffer>;

@@ -176,7 +176,6 @@ static void createFaces(DriverApi& dapi, Handle<HwTexture> texture, int baseWidt
 
     // Draw a circle on a yellow background.
     uint32_t* texels = (uint32_t*) buffer0;
-    FaceOffsets offsets;
     for (int face = 0; face < 6; face++) {
         for (int row = 0; row < height; row++) {
             for (int col = 0; col < width; col++) {
@@ -187,12 +186,11 @@ static void createFaces(DriverApi& dapi, Handle<HwTexture> texture, int baseWidt
                 texels[row * width + col] = toUintColor(float4(color, 1.0f));
             }
         }
-        offsets[face] = face * width * height * 4;
-        texels += offsets[face] / 4;
+        texels += face * width * height;
     }
 
     // Upload to the GPU.
-    dapi.updateCubeImage(texture, level, std::move(pb), offsets);
+    dapi.update3DImage(texture, level, 0, 0, 0, width, height, 6, std::move(pb));
 }
 
 TEST_F(BackendTest, CubemapMinify) {
@@ -418,10 +416,10 @@ TEST_F(BackendTest, DepthMinify) {
     ProgramHandle program;
     {
         ShaderGenerator shaderGen(triangleVs, triangleFs, sBackend, sIsMobilePlatform);
-        Program prog = shaderGen.getProgram();
-        Program::Sampler psamplers[] = { utils::CString("tex"), 0, false };
-        prog.setSamplerGroup(0, ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
-        prog.setUniformBlock(1, utils::CString("params"));
+        Program prog = shaderGen.getProgram(api);
+        Program::Sampler psamplers[] = { utils::CString("tex"), 0 };
+        prog.setSamplerGroup(0, ShaderStageFlags::ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
+        prog.uniformBlockBindings({{"params", 1}});
         program = api.createProgram(std::move(prog));
     }
 
@@ -560,10 +558,10 @@ TEST_F(BackendTest, ColorResolve) {
     ProgramHandle program;
     {
         ShaderGenerator shaderGen(triangleVs, triangleFs, sBackend, sIsMobilePlatform);
-        Program prog = shaderGen.getProgram();
-        Program::Sampler psamplers[] = { utils::CString("tex"), 0, false };
-        prog.setSamplerGroup(0, ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
-        prog.setUniformBlock(1, utils::CString("params"));
+        Program prog = shaderGen.getProgram(api);
+        Program::Sampler psamplers[] = { utils::CString("tex"), 0 };
+        prog.setSamplerGroup(0, ShaderStageFlags::ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
+        prog.uniformBlockBindings({{"params", 1}});
         program = api.createProgram(std::move(prog));
     }
 
@@ -668,10 +666,10 @@ TEST_F(BackendTest, DepthResolve) {
     ProgramHandle program;
     {
         ShaderGenerator shaderGen(triangleVs, triangleFs, sBackend, sIsMobilePlatform);
-        Program prog = shaderGen.getProgram();
-        Program::Sampler psamplers[] = { utils::CString("tex"), 0, false };
-        prog.setSamplerGroup(0, ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
-        prog.setUniformBlock(1, utils::CString("params"));
+        Program prog = shaderGen.getProgram(api);
+        Program::Sampler psamplers[] = { utils::CString("tex"), 0 };
+        prog.setSamplerGroup(0, ShaderStageFlags::ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
+        prog.uniformBlockBindings({{"params", 1}});
         program = api.createProgram(std::move(prog));
     }
 
@@ -864,6 +862,170 @@ TEST_F(BackendTest, Blit2DTextureArray) {
     executeCommands();
 
     api.stopCapture(0);
+}
+
+TEST_F(BackendTest, BlitRegion) {
+    auto& api = getDriverApi();
+
+    constexpr int kSrcTexWidth = 1024;
+    constexpr int kSrcTexHeight = 1024;
+    constexpr auto kSrcTexFormat = TextureFormat::RGBA8;
+    constexpr int kDstTexWidth = 384;
+    constexpr int kDstTexHeight = 384;
+    constexpr auto kDstTexFormat = TextureFormat::RGBA8;
+    constexpr int kNumLevels = 3;
+    constexpr int kSrcLevel = 1;
+    constexpr int kDstLevel = 0;
+
+    // Create a SwapChain and make it current. We don't really use it so the res doesn't matter.
+    auto swapChain = api.createSwapChainHeadless(256, 256, 0);
+    api.makeCurrent(swapChain, swapChain);
+
+    // Create a source texture.
+    Handle<HwTexture> srcTexture = api.createTexture(
+        SamplerType::SAMPLER_2D, kNumLevels, kSrcTexFormat, 1, kSrcTexWidth, kSrcTexHeight, 1,
+        TextureUsage::SAMPLEABLE | TextureUsage::UPLOADABLE | TextureUsage::COLOR_ATTACHMENT);
+    const bool flipY = sBackend == Backend::OPENGL;
+    createBitmap(api, srcTexture, kSrcTexWidth, kSrcTexHeight, 0, float3(0.5, 0, 0), flipY);
+    createBitmap(api, srcTexture, kSrcTexWidth, kSrcTexHeight, 1, float3(0, 0, 0.5), flipY);
+
+    // Create a destination texture.
+    Handle<HwTexture> dstTexture = api.createTexture(
+        SamplerType::SAMPLER_2D, kNumLevels, kDstTexFormat, 1, kDstTexWidth, kDstTexHeight, 1,
+        TextureUsage::SAMPLEABLE | TextureUsage::COLOR_ATTACHMENT);
+
+    // Blit one-quarter of src level 1 to dst level 0.
+    Viewport srcRect = {
+        .left = 0,
+        .bottom = 0,
+        .width = (kSrcTexWidth >> kSrcLevel) / 2,
+        .height = (kSrcTexHeight >> kSrcLevel) / 2,
+    };
+    Viewport dstRect = {
+        .left = 10,
+        .bottom = 10,
+        .width = kDstTexWidth - 10,
+        .height = kDstTexHeight - 10,
+    };
+
+    // Create a RenderTarget for each texture's miplevel.
+    // We purposely set the render target width and height to smaller than the texture, to check
+    // that this case is handled correctly.
+    Handle<HwRenderTarget> srcRenderTarget =
+            api.createRenderTarget(TargetBufferFlags::COLOR, srcRect.width,
+                    srcRect.height, 1, {srcTexture, kSrcLevel, 0}, {}, {});
+    Handle<HwRenderTarget> dstRenderTarget =
+            api.createRenderTarget(TargetBufferFlags::COLOR, kDstTexWidth >> kDstLevel,
+                    kDstTexHeight >> kDstLevel, 1, {dstTexture, kDstLevel, 0}, {}, {});
+
+    api.blit(TargetBufferFlags::COLOR0, dstRenderTarget, dstRect, srcRenderTarget, srcRect,
+            SamplerMagFilter::LINEAR);
+
+    // Push through an empty frame to allow the texture to upload and the blit to execute.
+    api.beginFrame(0, 0);
+    api.commit(swapChain);
+    api.endFrame(0);
+
+    // Grab a screenshot.
+    ScreenshotParams params { kDstTexWidth, kDstTexHeight, "BlitRegion.png" };
+    api.beginFrame(0, 0);
+    dumpScreenshot(api, dstRenderTarget, &params);
+    api.commit(swapChain);
+    api.endFrame(0);
+
+    // Wait for the ReadPixels result to come back.
+    api.finish();
+    executeCommands();
+    getDriver().purge();
+
+    // Check if the image matches perfectly to our golden run.
+    //
+    // TODO: for some reason, this test has very, very slight (as in one pixel) differences between
+    // OpenGL and Metal. So disable golden checking for now.
+    // Use the compare tool from ImageMagick to see visual differences:
+    // compare -verbose -metric mae BlitRegion_Metal.png BlitRegion_OpenGL.png difference.png
+    //
+    // const uint32_t expected = 0x74fa34ed;
+    // printf("Computed hash is 0x%8.8x, Expected 0x%8.8x\n", params.pixelHashResult, expected);
+    // EXPECT_TRUE(params.pixelHashResult == expected);
+
+    // Cleanup.
+    api.destroyTexture(srcTexture);
+    api.destroyTexture(dstTexture);
+    api.destroySwapChain(swapChain);
+    api.destroyRenderTarget(srcRenderTarget);
+    api.destroyRenderTarget(dstRenderTarget);
+    executeCommands();
+}
+
+TEST_F(BackendTest, BlitRegionToSwapChain) {
+    auto& api = getDriverApi();
+
+    constexpr int kSrcTexWidth = 1024;
+    constexpr int kSrcTexHeight = 1024;
+    constexpr auto kSrcTexFormat = TextureFormat::RGBA8;
+    constexpr int kDstTexWidth = 512;
+    constexpr int kDstTexHeight = 512;
+    constexpr int kNumLevels = 3;
+
+    // Create a SwapChain and make it current.
+    auto swapChain = createSwapChain();
+    Handle<HwRenderTarget> dstRenderTarget = api.createDefaultRenderTarget();
+    api.makeCurrent(swapChain, swapChain);
+
+    // Create a source texture.
+    Handle<HwTexture> srcTexture = api.createTexture(
+        SamplerType::SAMPLER_2D, kNumLevels, kSrcTexFormat, 1, kSrcTexWidth, kSrcTexHeight, 1,
+        TextureUsage::SAMPLEABLE | TextureUsage::UPLOADABLE | TextureUsage::COLOR_ATTACHMENT);
+    const bool flipY = sBackend == Backend::OPENGL;
+    createBitmap(api, srcTexture, kSrcTexWidth, kSrcTexHeight, 0, float3(0.5, 0, 0), flipY);
+    createBitmap(api, srcTexture, kSrcTexWidth, kSrcTexHeight, 1, float3(0, 0, 0.5), flipY);
+
+    // Create a RenderTarget for each texture's miplevel.
+    Handle<HwRenderTarget> srcRenderTargets[kNumLevels];
+    for (uint8_t level = 0; level < kNumLevels; level++) {
+        srcRenderTargets[level] = api.createRenderTarget( TargetBufferFlags::COLOR,
+                kSrcTexWidth >> level, kSrcTexHeight >> level, 1, { srcTexture, level, 0 }, {}, {});
+    }
+
+    // Blit one-quarter of src level 1 to dst level 0.
+    const int srcLevel = 1;
+    Viewport srcRect = {
+        .left = (kSrcTexWidth >> srcLevel) / 2,
+        .bottom = (kSrcTexHeight >> srcLevel) / 2,
+        .width = (kSrcTexWidth >> srcLevel) / 2,
+        .height = (kSrcTexHeight >> srcLevel) / 2,
+    };
+    Viewport dstRect = {
+        .left = 10,
+        .bottom = 10,
+        .width = kDstTexWidth - 10,
+        .height = kDstTexHeight - 10,
+    };
+
+    api.beginFrame(0, 0);
+
+    api.blit(TargetBufferFlags::COLOR0, dstRenderTarget,
+            dstRect, srcRenderTargets[srcLevel],
+            srcRect, SamplerMagFilter::LINEAR);
+
+    ScreenshotParams params { kDstTexWidth, kDstTexHeight, "BlitRegionToSwapChain.png" };
+    dumpScreenshot(api, dstRenderTarget, &params);
+
+    api.commit(swapChain);
+
+    api.endFrame(0);
+
+    // Wait for the ReadPixels result to come back.
+    api.finish();
+    executeCommands();
+    getDriver().purge();
+
+    // Cleanup.
+    api.destroyTexture(srcTexture);
+    api.destroySwapChain(swapChain);
+    for (auto rt : srcRenderTargets)  api.destroyRenderTarget(rt);
+    executeCommands();
 }
 
 } // namespace test

@@ -18,6 +18,7 @@
 
 #include "ShaderGenerator.h"
 #include "TrianglePrimitive.h"
+#include "BackendTestUtils.h"
 
 #include <utils/Hash.h>
 
@@ -238,12 +239,12 @@ TEST_F(ReadPixelsTest, ReadPixels) {
     Handle<HwProgram> programFloat, programUint;
     {
         ShaderGenerator shaderGen(vertex, fragmentFloat, sBackend, sIsMobilePlatform);
-        Program p = shaderGen.getProgram();
+        Program p = shaderGen.getProgram(getDriverApi());
         programFloat = getDriverApi().createProgram(std::move(p));
     }
     {
         ShaderGenerator shaderGen(vertex, fragmentUint, sBackend, sIsMobilePlatform);
-        Program p = shaderGen.getProgram();
+        Program p = shaderGen.getProgram(getDriverApi());
         programUint = getDriverApi().createProgram(std::move(p));
     }
 
@@ -385,7 +386,7 @@ TEST_F(ReadPixelsTest, ReadPixelsPerformance) {
 
     // Create a program.
     ShaderGenerator shaderGen(vertex, fragmentFloat, sBackend, sIsMobilePlatform);
-    Program p = shaderGen.getProgram();
+    Program p = shaderGen.getProgram(getDriverApi());
     auto program = getDriverApi().createProgram(std::move(p));
 
     // Create a Texture and RenderTarget to render into.

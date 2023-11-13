@@ -293,7 +293,8 @@ public:
     enum class Priority {
         NORMAL,
         DISPLAY,
-        URGENT_DISPLAY
+        URGENT_DISPLAY,
+        BACKGROUND
     };
 
     static void setThreadPriority(Priority priority) noexcept;
@@ -302,6 +303,8 @@ public:
     size_t getParallelSplitCount() const noexcept {
         return mParallelSplitCount;
     }
+
+    size_t getThreadCount() const { return mThreadCount; }
 
 private:
     // this is just to avoid using std::default_random_engine, since we're in a public header.

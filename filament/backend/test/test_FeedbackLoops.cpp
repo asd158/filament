@@ -19,6 +19,8 @@
 #include "ShaderGenerator.h"
 #include "TrianglePrimitive.h"
 
+#include "private/backend/SamplerGroup.h"
+
 #include <utils/Hash.h>
 #include <utils/Log.h>
 
@@ -131,11 +133,16 @@ TEST_F(BackendTest, FeedbackLoops) {
         // Create a program.
         ProgramHandle program;
         {
-            ShaderGenerator shaderGen(fullscreenVs, fullscreenFs, sBackend, sIsMobilePlatform);
-            Program prog = shaderGen.getProgram();
-            Program::Sampler psamplers[] = { utils::CString("tex"), 0, false };
-            prog.setSamplerGroup(0, ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
-            prog.setUniformBlock(1, utils::CString("params"));
+            SamplerInterfaceBlock sib = filament::SamplerInterfaceBlock::Builder()
+                    .name("backend_test_sib")
+                    .stageFlags(backend::ShaderStageFlags::ALL_SHADER_STAGE_FLAGS)
+                    .add( {{"tex", SamplerType::SAMPLER_2D, SamplerFormat::FLOAT, Precision::HIGH }} )
+                    .build();
+            ShaderGenerator shaderGen(fullscreenVs, fullscreenFs, sBackend, sIsMobilePlatform, &sib);
+            Program prog = shaderGen.getProgram(api);
+            Program::Sampler psamplers[] = { utils::CString("tex"), 0 };
+            prog.setSamplerGroup(0, ShaderStageFlags::ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
+            prog.uniformBlockBindings({{"params", 1}});
             program = api.createProgram(std::move(prog));
         }
 
@@ -168,7 +175,7 @@ TEST_F(BackendTest, FeedbackLoops) {
          }
         auto cb = [](void* buffer, size_t size, void* user) { free(buffer); };
         PixelBufferDescriptor pb(buffer, size, PixelDataFormat::RGBA, PixelDataType::UBYTE, cb);
-        api.update2DImage(texture, 0, 0, 0, kTexWidth, kTexHeight, std::move(pb));
+        api.update3DImage(texture, 0, 0, 0, 0, kTexWidth, kTexHeight, 1, std::move(pb));
 
         for (int frame = 0; frame < kNumFrames; frame++) {
 
@@ -185,9 +192,10 @@ TEST_F(BackendTest, FeedbackLoops) {
             SamplerParams sparams = {};
             sparams.filterMag = SamplerMagFilter::LINEAR;
             sparams.filterMin = SamplerMinFilter::LINEAR_MIPMAP_NEAREST;
-            samplers.setSampler(0, texture, sparams);
-            auto sgroup = api.createSamplerGroup(samplers.getSize());
-            api.updateSamplerGroup(sgroup, std::move(samplers.toCommandStream()));
+            samplers.setSampler(0, { texture, sparams });
+            auto sgroup =
+                    api.createSamplerGroup(samplers.getSize(), utils::FixedSizeString<32>("Test"));
+            api.updateSamplerGroup(sgroup, samplers.toBufferDescriptor(api));
             auto ubuffer = api.createBufferObject(sizeof(MaterialParams),
                     BufferObjectBinding::UNIFORM, BufferUsage::STATIC);
             api.makeCurrent(swapChain, swapChain);
